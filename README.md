@@ -4,7 +4,7 @@ Asistente conversacional que responde preguntas sobre las normas de presentació
 (formato institucional, formato de anteproyecto y manual IEEE). Usa *Retrieval-Augmented Generation*:
 recupera fragmentos de los documentos oficiales y genera la respuesta con Gemini, citando documento y página.
 
-> Estado: **Sprint 2 – fase F1** (configuración base, logging y `GET /health`).
+> Estado: **Sprint 2 – fase F2** (lectura y fragmentación del corpus, HU03).
 
 ## Arquitectura
 
@@ -59,8 +59,19 @@ Copy-Item .env.example .env          # luego edita .env y pon tu GOOGLE_API_KEY
 | Todos los hooks | `pre-commit run --all-files` |
 | Verificar clave y modelos de Gemini | `python -m app.cli check` |
 | API (desarrollo) | `uvicorn app.main:app --reload` → http://localhost:8000/docs |
-| Ingesta *(F2)* | `python -m app.cli ingest` |
+| Lectura y fragmentación del corpus | `python -m app.cli ingest` |
+| … y exportar los fragmentos para revisarlos | `python -m app.cli ingest --exportar eval/reports/fragmentos.jsonl` |
 | Evaluación *(F4)* | `python -m app.cli eval` |
+
+## Ingesta (HU03)
+
+1. Copiar los PDF oficiales en `data/corpus/` (no se suben al repositorio).
+2. `python -m app.cli ingest` lee cada página con `pypdf`, conserva `file_name` y `page_label`
+   (la etiqueta de página impresa del PDF, p. ej. el manual IEEE empieza en la 4), elimina
+   encabezados/pies repetidos, números de página sueltos y viñetas de Word, y fragmenta con
+   `SentenceSplitter` (`CHUNK_SIZE`, `CHUNK_OVERLAP`).
+3. Cada página es un documento independiente, así que ningún fragmento mezcla dos páginas y la
+   cita *documento + página* siempre es exacta.
 
 ## Configuración
 
