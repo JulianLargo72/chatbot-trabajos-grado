@@ -5,6 +5,8 @@
 - ``indice``  estadísticas del índice persistente, sin reprocesar los PDF (HU04).
 - ``buscar``  recupera los fragmentos más similares a una pregunta (prueba manual del índice).
 - ``preguntar`` hace una consulta completa (recuperación + Gemini), igual que POST /api/chat.
+- ``eval-chat`` comportamiento con Gemini en las categorías B y C del banco (HU08, HU09).
+- ``prompt``  muestra el System Prompt vigente y sus mensajes estándar.
 - ``eval``    hit rate top-k y análisis del umbral con el banco de preguntas (HU05).
 """
 
@@ -184,6 +186,54 @@ def cmd_preguntar(pregunta: str) -> int:
     return 0
 
 
+def cmd_eval_chat(
+    banco: Path, salida: Path, categorias: list[str], ids: list[str], pausa: float
+) -> int:
+    """Evalúa HU08/HU09 con el modelo real; guarda el reporte con las respuestas completas."""
+    from app.rag.models import build_llm
+    from app.rag.retriever import crear_recuperador
+    from app.services.behavior_eval import evaluar_comportamiento, guardar_reporte
+    from app.services.chat import ChatService
+    from app.services.evaluation import cargar_banco
+
+    settings = get_settings()
+    servicio = ChatService(crear_recuperador(settings), build_llm(settings))
+
+    def progreso(n: int, total: int, pid: str) -> None:
+        print(f"\r  Consultando {n}/{total} ({pid})   ", end="", flush=True)
+
+    reporte = evaluar_comportamiento(
+        cargar_banco(banco),
+        servicio,
+        settings,
+        categorias=tuple(categorias),
+        ids=tuple(ids),
+        pausa=pausa,
+        progreso=progreso,
+    )
+    print("\r" + " " * 40 + "\r", end="")
+    _, ruta_md = guardar_reporte(reporte, salida)
+
+    print()
+    for r in reporte.resultados:
+        marca = "OK " if r.correcto else "XX "
+        print(f"  {marca} {r.id} esperado={r.tipo_esperado:<17} obtenido={r.tipo_obtenido}")
+    print()
+    for cat, res in reporte.resumen.items():
+        print(f"  Categoría {cat}: {res['correctas']} de {res['total']} correctas")
+    print(f"\nReporte (con las respuestas completas): {ruta_md}\n")
+    return 0 if all(r.correcto for r in reporte.resultados) else 1
+
+
+def cmd_prompt() -> int:
+    from app.rag import prompts
+
+    print(f"\n=== System Prompt v{prompts.VERSION_PROMPT} ===\n\n{prompts.SYSTEM_PROMPT}")
+    print(f"=== Mensaje sin información (HU08) ===\n{prompts.MENSAJE_SIN_INFORMACION}\n")
+    print(f"=== Mensaje fuera de dominio (HU09) ===\n{prompts.MENSAJE_FUERA_DE_DOMINIO}\n")
+    return 0
+
+
 def cmd_eval(banco: Path, salida: Path, max_k: int, solo_a: bool, pausa: float) -> int:
     """Calcula el hit rate (HU05), guarda el reporte y sugiere el umbral de similitud."""
     from app.rag.retriever import crear_recuperador
@@ -269,6 +319,28 @@ def main(argv: list[str] | None = None) -> int:
     p_preg = sub.add_parser("preguntar", help="Consulta completa con Gemini (como /api/chat)")
     p_preg.add_argument("pregunta", help="Pregunta en lenguaje natural (entre comillas)")
 
+    p_echat = sub.add_parser("eval-chat", help="Categorías B y C con Gemini (HU08, HU09)")
+    p_echat.add_argument(
+        "--banco", type=Path, default=Path("eval/banco_preguntas.json"), help="Banco JSON"
+    )
+    p_echat.add_argument(
+        "--salida", type=Path, default=Path("eval/reports"), help="Carpeta de reportes"
+    )
+    p_echat.add_argument(
+        "--categorias",
+        nargs="*",
+        default=["B", "C"],
+        choices=["A", "B", "C"],
+        help="Categorías a evaluar (por defecto B y C)",
+    )
+    p_echat.add_argument(
+        "--ids", nargs="*", default=[], help="Preguntas adicionales por ID (p. ej. D02 D27)"
+    )
+    p_echat.add_argument(
+        "--pausa", type=float, default=0.0, help="Segundos entre preguntas (cuota gratuita)"
+    )
+    sub.add_parser("prompt", help="Muestra el System Prompt vigente")
+
     p_eval = sub.add_parser("eval", help="Hit rate top-k con el banco de preguntas (HU05)")
     p_eval.add_argument(
         "--banco", type=Path, default=Path("eval/banco_preguntas.json"), help="Banco JSON"
@@ -299,6 +371,10 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_buscar(args.pregunta, args.top_k)
         if args.comando == "preguntar":
             return cmd_preguntar(args.pregunta)
+        if args.comando == "eval-chat":
+            return cmd_eval_chat(args.banco, args.salida, args.categorias, args.ids, args.pausa)
+        if args.comando == "prompt":
+            return cmd_prompt()
         return cmd_eval(args.banco, args.salida, args.max_k, args.solo_a, args.pausa)
     except (RuntimeError, FileNotFoundError) as exc:  # falta la clave, el corpus o el índice
         logger.error(str(exc))
