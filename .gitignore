@@ -29,6 +29,7 @@ data/corpus/*.pdf
 
 # --- Reportes generados (se conservan solo los que se suban a propósito) ---
 eval/reports/*.tmp
+eval/reports/fragmentos.jsonl
 
 # --- Editores y sistema ---
 .vscode/

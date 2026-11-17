@@ -9,7 +9,6 @@ def test_check_sin_clave_falla_con_codigo_1(monkeypatch) -> None:
     assert cli.main(["check"]) == 1
 
 
-def test_comandos_pendientes(monkeypatch) -> None:
+def test_comando_eval_pendiente(monkeypatch) -> None:
     monkeypatch.setattr(cli, "get_settings", lambda: Settings(_env_file=None))
-    assert cli.main(["ingest"]) == 2
     assert cli.main(["eval"]) == 2
