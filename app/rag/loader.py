@@ -11,6 +11,7 @@ Antes de fragmentar se eliminan encabezados y pies de página repetidos y los n�
 página sueltos, para que no contaminen los fragmentos ni los embeddings.
 """
 
+import hashlib
 import logging
 import re
 from collections import Counter
@@ -126,8 +127,10 @@ def paginas_a_documentos(paginas: list[PaginaPdf], extra: dict | None = None) ->
                 extra={"archivo": pagina.file_name, "pagina": pagina.page_label},
             )
             continue
+        file_hash = (extra or {}).get("file_hash", "")
         documentos.append(
             Document(
+                id_=f"{file_hash[:16] or pagina.file_name}-p{pagina.page_index}",
                 text=texto,
                 metadata={
                     "file_name": pagina.file_name,
@@ -150,7 +153,23 @@ def listar_pdfs(directorio: Path) -> list[Path]:
     return sorted(p for p in directorio.iterdir() if p.suffix.lower() == ".pdf")
 
 
+def hash_archivo(ruta: Path) -> str:
+    """SHA-256 del contenido: cambia si el PDF cambia, aunque conserve el nombre."""
+    digest = hashlib.sha256()
+    with ruta.open("rb") as archivo:
+        for bloque in iter(lambda: archivo.read(1 << 16), b""):
+            digest.update(bloque)
+    return digest.hexdigest()
+
+
+def cargar_pdf(ruta: Path, file_hash: str | None = None) -> list[Document]:
+    """Lee un PDF y devuelve sus páginas limpias como documentos con ``file_hash``."""
+    return paginas_a_documentos(
+        leer_pdf(ruta), extra={"file_hash": file_hash or hash_archivo(ruta)}
+    )
+
+
 def cargar_corpus(directorio: Path) -> Iterable[tuple[Path, list[Document]]]:
     """Lee cada PDF del corpus y entrega sus documentos (una página = un documento)."""
     for ruta in listar_pdfs(directorio):
-        yield ruta, paginas_a_documentos(leer_pdf(ruta))
+        yield ruta, cargar_pdf(ruta)

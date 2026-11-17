@@ -4,7 +4,7 @@ Asistente conversacional que responde preguntas sobre las normas de presentació
 (formato institucional, formato de anteproyecto y manual IEEE). Usa *Retrieval-Augmented Generation*:
 recupera fragmentos de los documentos oficiales y genera la respuesta con Gemini, citando documento y página.
 
-> Estado: **Sprint 2 – fase F2** (lectura y fragmentación del corpus, HU03).
+> Estado: **Sprint 2 – fase F3** (embeddings, índice persistente en Chroma e ingesta incremental, HU04).
 
 ## Arquitectura
 
@@ -59,8 +59,11 @@ Copy-Item .env.example .env          # luego edita .env y pon tu GOOGLE_API_KEY
 | Todos los hooks | `pre-commit run --all-files` |
 | Verificar clave y modelos de Gemini | `python -m app.cli check` |
 | API (desarrollo) | `uvicorn app.main:app --reload` → http://localhost:8000/docs |
-| Lectura y fragmentación del corpus | `python -m app.cli ingest` |
-| … y exportar los fragmentos para revisarlos | `python -m app.cli ingest --exportar eval/reports/fragmentos.jsonl` |
+| Ingesta incremental (fragmentos → embeddings → Chroma) | `python -m app.cli ingest` |
+| Reconstruir el índice desde cero | `python -m app.cli ingest --reset` |
+| Solo fragmentar (sin embeddings, no consume cuota) | `python -m app.cli ingest --solo-fragmentar --exportar eval/reports/fragmentos.jsonl` |
+| Estado del índice (sin reprocesar) | `python -m app.cli indice` |
+| Probar la recuperación | `python -m app.cli buscar "¿Cuántas palabras tiene el resumen?"` |
 | Evaluación *(F4)* | `python -m app.cli eval` |
 
 ## Ingesta (HU03)
@@ -72,6 +75,23 @@ Copy-Item .env.example .env          # luego edita .env y pon tu GOOGLE_API_KEY
    `SentenceSplitter` (`CHUNK_SIZE`, `CHUNK_OVERLAP`).
 3. Cada página es un documento independiente, así que ningún fragmento mezcla dos páginas y la
    cita *documento + página* siempre es exacta.
+
+## Índice vectorial (HU04)
+
+- **Base vectorial:** ChromaDB persistente en `data/chroma/` (colección `reglamentos`, distancia coseno).
+- **Embeddings:** `gemini-embedding-001` (3072 dimensiones). LlamaIndex usa `RETRIEVAL_DOCUMENT` al
+  indexar y `RETRIEVAL_QUERY` al consultar.
+- **Mismo modelo garantizado:** la colección guarda el modelo con que se construyó; si `.env` indica
+  otro, la ingesta y la consulta se detienen y piden `--reset`.
+- **Ingesta incremental e idempotente:** se compara el SHA-256 de cada PDF con el guardado en el
+  índice. Solo se embeben los archivos nuevos o modificados; los retirados del corpus se eliminan.
+  Los IDs de los fragmentos son deterministas, por lo que repetir la ingesta no duplica vectores.
+- **Verificación:** al terminar se comprueba que *fragmentos = vectores* por archivo y en total.
+- **Reindexar sin reiniciar:** `POST /api/admin/ingest` con la cabecera `X-Admin-Key: <ADMIN_API_KEY>`
+  (`?reset=true` para reconstruir). Responde 401 con clave inválida, 409 si ya hay una ingesta en curso
+  y 503 si `ADMIN_API_KEY` no está configurada.
+- **Puntaje de similitud:** el adaptador de Chroma de LlamaIndex devuelve `exp(-distancia)`; el sistema
+  lo convierte a similitud coseno real (`1 + ln(puntaje)`) para que `SIMILARITY_THRESHOLD` sea interpretable.
 
 ## Configuración
 
