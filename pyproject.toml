@@ -1,0 +1,70 @@
+[project]
+name = "chatbot-trabajos-grado"
+version = "0.1.0"
+description = "Chatbot RAG que responde preguntas sobre las normas de trabajos de grado a partir de los documentos oficiales."
+readme = "README.md"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    # API
+    "fastapi>=0.163,<1.0",
+    "uvicorn[standard]>=0.54,<1.0",
+    # Configuración
+    "pydantic-settings>=2.16,<3.0",
+    # Orquestación RAG (LlamaIndex)
+    "llama-index-core>=0.14.26,<0.15",
+    "llama-index-llms-google-genai>=0.12,<0.13",
+    "llama-index-embeddings-google-genai>=0.7,<0.8",
+    "llama-index-vector-stores-chroma>=0.7,<0.8",
+    # Base vectorial y lectura de PDF
+    "chromadb>=1.5,<2.0",
+    "pypdf>=7.1,<8.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.17,<0.18",
+    "pytest>=9.2,<10.0",
+    "pytest-cov>=7.1,<8.0",
+    "pre-commit>=4.7,<5.0",
+    "httpx>=0.28,<1.0",  # cliente de pruebas de FastAPI
+]
+
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+# ---------------------------------------------------------------- Ruff
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["data", "eval/reports"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle (errores)
+    "W",   # pycodestyle (advertencias)
+    "F",   # pyflakes
+    "I",   # orden de imports
+    "B",   # bugbear
+    "UP",  # sintaxis moderna de Python
+    "SIM", # simplificaciones
+    "N",   # nombres PEP 8
+]
+
+[tool.ruff.format]
+quote-style = "double"
+
+# ---------------------------------------------------------------- Pytest
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "integration: pruebas de integración (usan LLM simulado, sin red)",
+]
+
+[tool.coverage.run]
+source = ["app"]
+branch = true
