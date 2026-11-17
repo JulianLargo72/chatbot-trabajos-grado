@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app import __version__
-from app.api.routes import admin, health
+from app.api.routes import admin, chat, health
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 
@@ -54,6 +54,7 @@ def create_app() -> FastAPI:
         logger.exception("Error no controlado", extra={"ruta": request.url.path})
         return JSONResponse(status_code=500, content={"detail": "Error interno del servidor"})
 
+    app.include_router(chat.router)
     app.include_router(health.router)
     app.include_router(admin.router)
     return app

@@ -44,6 +44,8 @@ class Settings(BaseSettings):
     # Se declara para que LlamaIndex no consulte los metadatos del modelo por red al crearlo.
     llm_context_window: int = Field(default=131072, gt=0)
     llm_timeout_seconds: int = Field(default=30, gt=0)
+    # Reintentos ante errores transitorios de Gemini (el plan gratuito puede responder 429/503).
+    llm_max_retries: int = Field(default=2, ge=0, le=5)
 
     # --- Rutas ---
     corpus_dir: Path = Path("data/corpus")
@@ -54,7 +56,7 @@ class Settings(BaseSettings):
     chunk_size: int = Field(default=512, gt=0)
     chunk_overlap: int = Field(default=64, ge=0)
     top_k: int = Field(default=3, ge=1, le=20)
-    similarity_threshold: float = Field(default=0.60, ge=0.0, le=1.0)
+    similarity_threshold: float = Field(default=0.67, ge=0.0, le=1.0)
 
     # --- API ---
     admin_api_key: SecretStr | None = None
