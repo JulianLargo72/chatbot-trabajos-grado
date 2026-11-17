@@ -4,7 +4,7 @@ Asistente conversacional que responde preguntas sobre las normas de presentació
 (formato institucional, formato de anteproyecto y manual IEEE). Usa *Retrieval-Augmented Generation*:
 recupera fragmentos de los documentos oficiales y genera la respuesta con Gemini, citando documento y página.
 
-> Estado: **Sprint 3 – fase F5** (API de chat con fuentes, HU06 y HU07).
+> Estado: **Sprint 3 – fase F6** (reglas de comportamiento: sin información y fuera de dominio, HU08 y HU09).
 
 ## Arquitectura
 
@@ -65,6 +65,9 @@ Copy-Item .env.example .env          # luego edita .env y pon tu GOOGLE_API_KEY
 | Estado del índice (sin reprocesar) | `python -m app.cli indice` |
 | Probar la recuperación | `python -m app.cli buscar "¿Cuántas palabras tiene el resumen?"` |
 | Evaluación de la recuperación (hit rate, HU05) | `python -m app.cli eval` |
+| Comportamiento con Gemini en las categorías B y C (HU08, HU09) | `python -m app.cli eval-chat` |
+| … incluyendo las preguntas de contraste D02 y D27 | `python -m app.cli eval-chat --ids D02 D27` |
+| Ver el System Prompt vigente | `python -m app.cli prompt` |
 | Consulta completa desde la terminal (1 embedding + 1 llamada al LLM) | `python -m app.cli preguntar "¿Cuál es la extensión máxima del resumen?"` |
 
 ## Ingesta (HU03)
@@ -134,6 +137,13 @@ Para experimentar con la fragmentación: cambiar `CHUNK_SIZE`/`CHUNK_OVERLAP` en
 - Flujo: recuperación top-k → filtro por `SIMILARITY_THRESHOLD` → Gemini con el System Prompt versionado
   (`app/rag/prompts.py`) → etiquetas `[SIN_INFORMACION]`/`[FUERA_DE_DOMINIO]` reemplazadas por mensajes
   estándar. Sin fragmentos relevantes nunca se devuelve una respuesta generada.
+
+## Reglas de comportamiento (HU08, HU09)
+
+El System Prompt está documentado en [`docs/system_prompt.md`](docs/system_prompt.md) (generado a partir de
+`app/rag/prompts.py`; una prueba verifica que ambos coincidan). `python -m app.cli eval-chat` envía las
+preguntas B y C del banco al chat completo con Gemini (10 consultas), compara el `tipo` obtenido con el
+esperado y guarda `eval/reports/comportamiento_<fecha>.md` con las respuestas completas.
 
 ## Configuración
 

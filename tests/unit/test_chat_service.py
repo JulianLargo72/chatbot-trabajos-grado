@@ -134,3 +134,11 @@ def test_nombres_legibles() -> None:
     )
     assert prompts.nombre_legible("Manual_IEEE_Javeriana_limpio.pdf") == "Manual de norma IEEE"
     assert prompts.nombre_legible("Otro_documento.pdf") == "Otro documento"
+
+
+def test_prompt_delimita_el_dominio_del_proceso_de_grado() -> None:
+    """v1.1: trámites, costos y asesores son del dominio (HU08), no fuera de dominio (HU09)."""
+    regla_2 = prompts.SYSTEM_PROMPT.split("2. ")[1].split("3. ")[0]
+    for tema in ("fechas", "jurados", "asesores", "horarios", "derechos de grado"):
+        assert tema in regla_2
+    assert "aplica la regla 2" in prompts.SYSTEM_PROMPT
