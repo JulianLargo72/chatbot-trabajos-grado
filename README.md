@@ -4,7 +4,7 @@ Asistente conversacional que responde preguntas sobre las normas de presentació
 (formato institucional, formato de anteproyecto y manual IEEE). Usa *Retrieval-Augmented Generation*:
 recupera fragmentos de los documentos oficiales y genera la respuesta con Gemini, citando documento y página.
 
-> Estado: **Sprint 2 – fase F3** (embeddings, índice persistente en Chroma e ingesta incremental, HU04).
+> Estado: **Sprint 2 – fase F4** (evaluación de la recuperación con el banco de preguntas, HU05).
 
 ## Arquitectura
 
@@ -64,7 +64,7 @@ Copy-Item .env.example .env          # luego edita .env y pon tu GOOGLE_API_KEY
 | Solo fragmentar (sin embeddings, no consume cuota) | `python -m app.cli ingest --solo-fragmentar --exportar eval/reports/fragmentos.jsonl` |
 | Estado del índice (sin reprocesar) | `python -m app.cli indice` |
 | Probar la recuperación | `python -m app.cli buscar "¿Cuántas palabras tiene el resumen?"` |
-| Evaluación *(F4)* | `python -m app.cli eval` |
+| Evaluación de la recuperación (hit rate, HU05) | `python -m app.cli eval` |
 
 ## Ingesta (HU03)
 
@@ -92,6 +92,22 @@ Copy-Item .env.example .env          # luego edita .env y pon tu GOOGLE_API_KEY
   y 503 si `ADMIN_API_KEY` no está configurada.
 - **Puntaje de similitud:** el adaptador de Chroma de LlamaIndex devuelve `exp(-distancia)`; el sistema
   lo convierte a similitud coseno real (`1 + ln(puntaje)`) para que `SIMILARITY_THRESHOLD` sea interpretable.
+
+## Evaluación de la recuperación (HU05)
+
+`eval/banco_preguntas.json` es el Anexo A en formato máquina: 37 preguntas (27 de categoría A con
+documento y páginas esperadas, 5 de categoría B y 5 de categoría C). `python -m app.cli eval`:
+
+1. Recupera los 5 fragmentos más similares de cada pregunta (una consulta de embeddings por pregunta).
+2. Calcula, para la categoría A, el **hit rate de documento @1, @3 y @5** (criterio de HU05: el documento
+   esperado aparece en el top-3 en ≥ 80 % de los casos), el hit rate de página y el MRR.
+3. Registra la similitud máxima de las categorías A, B y C y barre umbrales de 0,40 a 0,90 para sugerir
+   `SIMILARITY_THRESHOLD` (insumo para HU08).
+4. Guarda el reporte en `eval/reports/hit_rate_<fecha>_cs<chunk_size>.md` y `.json` (se versionan como
+   evidencia).
+
+Para experimentar con la fragmentación: cambiar `CHUNK_SIZE`/`CHUNK_OVERLAP` en `.env`, ejecutar
+`python -m app.cli ingest --reset` y luego `python -m app.cli eval`; cada reporte queda con su configuración.
 
 ## Configuración
 
