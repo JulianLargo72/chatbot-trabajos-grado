@@ -4,7 +4,7 @@
 - ``ingest``  lectura, fragmentación, embeddings e indexación incremental en Chroma (HU03, HU04).
 - ``indice``  estadísticas del índice persistente, sin reprocesar los PDF (HU04).
 - ``buscar``  recupera los fragmentos más similares a una pregunta (prueba manual del índice).
-- ``eval``    hit rate top-k sobre el banco de preguntas (fase F4).
+- ``eval``    hit rate top-k y análisis del umbral con el banco de preguntas (HU05).
 """
 
 import argparse
@@ -150,29 +150,73 @@ def cmd_indice() -> int:
 
 def cmd_buscar(pregunta: str, top_k: int | None) -> int:
     """Recupera los fragmentos más parecidos a la pregunta (no usa el LLM)."""
-    from app.rag import index_store
-    from app.rag.models import build_embed_model
+    from app.rag.retriever import crear_recuperador
 
     settings = get_settings()
-    k = top_k or settings.top_k
-    indice = index_store.cargar_indice(settings, build_embed_model(settings))
-    resultados = indice.as_retriever(similarity_top_k=k).retrieve(pregunta)
+    recuperador = crear_recuperador(settings)
+    fragmentos = recuperador.recuperar(pregunta, top_k=top_k)
     print(f"\nPregunta: {pregunta}\n")
-    for posicion, r in enumerate(resultados, start=1):
-        similitud = index_store.similitud_coseno(r.score or 0.0)
-        marca = "" if similitud >= settings.similarity_threshold else "  (bajo el umbral)"
+    for posicion, f in enumerate(fragmentos, start=1):
+        marca = "" if f.similitud >= settings.similarity_threshold else "  (bajo el umbral)"
+        print(f"{posicion}. {f.documento} | pág. {f.pagina} | similitud {f.similitud:.3f}{marca}")
+        print(f"   {f.texto.replace(chr(10), ' ')[:220]}…\n")
+    return 0 if fragmentos else 1
+
+
+def cmd_eval(banco: Path, salida: Path, max_k: int, solo_a: bool, pausa: float) -> int:
+    """Calcula el hit rate (HU05), guarda el reporte y sugiere el umbral de similitud."""
+    from app.rag.retriever import crear_recuperador
+    from app.services.evaluation import cargar_banco, evaluar, guardar_reporte
+
+    settings = get_settings()
+    datos = cargar_banco(banco)
+    recuperador = crear_recuperador(settings)
+
+    def progreso(n: int, total: int, pid: str) -> None:
+        print(f"\r  Evaluando {n}/{total} ({pid})   ", end="", flush=True)
+
+    reporte = evaluar(
+        datos,
+        recuperador,
+        settings,
+        max_k=max_k,
+        categorias=("A",) if solo_a else ("A", "B", "C"),
+        pausa=pausa,
+        progreso=progreso,
+    )
+    print("\r" + " " * 40 + "\r", end="")
+    ruta_json, ruta_md = guardar_reporte(reporte, salida)
+
+    m, u = reporte.metricas, reporte.umbral
+    print()
+    print(f"Preguntas categoría A: {m['preguntas_categoria_a']} | chunk_size={settings.chunk_size}")
+    for k, v in m["hit_rate_documento"].items():
         print(
-            f"{posicion}. {r.node.metadata.get('file_name')} | pág. "
-            f"{r.node.metadata.get('page_label')} | similitud {similitud:.3f}{marca}"
+            f"  Hit rate documento @{k}: {v * 100:5.1f} %   página @{k}: "
+            f"{m['hit_rate_pagina'][k] * 100:5.1f} %"
         )
-        texto = r.node.get_content().replace("\n", " ")
-        print(f"   {texto[:220]}…\n")
-    return 0 if resultados else 1
-
-
-def _pendiente(fase: str) -> int:
-    logger.warning("Comando aún no implementado", extra={"fase": fase})
-    return 2
+    print(f"  MRR documento: {m['mrr_documento']:.3f}")
+    for d in reporte.por_documento.values():
+        print(f"  {d['archivo']:<48} top-3: {d['hit_rate_top3'] * 100:5.1f} %")
+    fallos = [
+        r
+        for r in reporte.preguntas
+        if r.categoria == "A" and (r.pos_documento is None or r.pos_documento > 3)
+    ]
+    if fallos:
+        print("  Fallos en top-3: " + ", ".join(r.id for r in fallos))
+    estado = "CUMPLE" if reporte.cumple_meta else "NO CUMPLE"
+    print(f"\nMeta HU05 (hit rate top-3 >= 80 %): {estado} ({reporte.hit_rate_top3 * 100:.1f} %)")
+    for cat, est in u["similitud_max_por_categoria"].items():
+        if est:
+            print(
+                f"  Similitud máx. cat. {cat}: min {est['min']:.3f} | "
+                f"prom {est['promedio']:.3f} | max {est['max']:.3f}"
+            )
+    if u["sugerido"] is not None:
+        print(f"  Umbral actual: {u['actual']} | sugerido: {u['sugerido']}")
+    print(f"\nReporte: {ruta_md}\n         {ruta_json}\n")
+    return 0 if reporte.cumple_meta else 1
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -201,7 +245,20 @@ def main(argv: list[str] | None = None) -> int:
     p_buscar.add_argument("pregunta", help="Pregunta en lenguaje natural (entre comillas)")
     p_buscar.add_argument("--top-k", type=int, default=None, help="Cantidad de fragmentos")
 
-    sub.add_parser("eval", help="Evalúa la recuperación con el banco de preguntas (F4)")
+    p_eval = sub.add_parser("eval", help="Hit rate top-k con el banco de preguntas (HU05)")
+    p_eval.add_argument(
+        "--banco", type=Path, default=Path("eval/banco_preguntas.json"), help="Banco JSON"
+    )
+    p_eval.add_argument(
+        "--salida", type=Path, default=Path("eval/reports"), help="Carpeta de reportes"
+    )
+    p_eval.add_argument("--max-k", type=int, default=5, help="Fragmentos por pregunta")
+    p_eval.add_argument(
+        "--solo-a", action="store_true", help="Solo categoría A (sin análisis de umbral)"
+    )
+    p_eval.add_argument(
+        "--pausa", type=float, default=0.0, help="Segundos entre preguntas (cuota gratuita)"
+    )
     args = parser.parse_args(argv)
 
     settings = get_settings()
@@ -216,7 +273,7 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_indice()
         if args.comando == "buscar":
             return cmd_buscar(args.pregunta, args.top_k)
-        return _pendiente("F4")
+        return cmd_eval(args.banco, args.salida, args.max_k, args.solo_a, args.pausa)
     except (RuntimeError, FileNotFoundError) as exc:  # falta la clave, el corpus o el índice
         logger.error(str(exc))
         return 1
