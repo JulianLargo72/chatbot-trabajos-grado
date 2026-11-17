@@ -107,3 +107,41 @@ def test_cli_prompt(capsys) -> None:
     salida = capsys.readouterr().out
     assert f"System Prompt v{prompts.VERSION_PROMPT}" in salida
     assert prompts.MENSAJE_FUERA_DE_DOMINIO in salida
+
+
+def _cli_con_fakes(monkeypatch, settings, llm) -> None:
+    from app.services import ingestion
+
+    modelo = EmbeddingFalso()
+    ingestion.ingestar(settings, lambda _s: modelo)
+    monkeypatch.setattr(cli, "get_settings", lambda: settings)
+    monkeypatch.setattr("app.rag.models.build_embed_model", lambda _s: modelo)
+    monkeypatch.setattr("app.rag.models.build_llm", lambda _s: llm)
+
+
+def test_cli_preguntar(servicio, monkeypatch, capsys) -> None:
+    _, settings, _ = servicio
+    _cli_con_fakes(monkeypatch, settings, LLMPorPregunta())
+    assert cli.main(["preguntar", "extension maxima del resumen"]) == 0
+    salida = capsys.readouterr().out
+    assert "Tipo: respondida" in salida and "formato.pdf | pág. 1" in salida
+
+
+def test_cli_preguntar_con_gemini_caido(servicio, monkeypatch) -> None:
+    _, settings, _ = servicio
+    _cli_con_fakes(monkeypatch, settings, LLMFalso(error="timeout"))
+    assert cli.main(["preguntar", "extension maxima del resumen"]) == 1
+
+
+def test_cli_eval_chat(servicio, monkeypatch, capsys, tmp_path) -> None:
+    _, settings, _ = servicio
+    _cli_con_fakes(monkeypatch, settings, LLMPorPregunta())
+    banco = tmp_path / "banco.json"
+    banco.write_text(BANCO.model_dump_json(), encoding="utf-8")
+    codigo = cli.main(
+        ["eval-chat", "--banco", str(banco), "--salida", str(tmp_path / "r"), "--ids", "D02"]
+    )
+    salida = capsys.readouterr().out
+    assert codigo == 0
+    assert "Categoría B: 1 de 1 correctas" in salida
+    assert list((tmp_path / "r").glob("comportamiento_*.md"))
