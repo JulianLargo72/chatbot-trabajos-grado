@@ -1,6 +1,6 @@
 [project]
 name = "chatbot-trabajos-grado"
-version = "0.1.0"
+version = "0.3.0"
 description = "Chatbot RAG que responde preguntas sobre las normas de trabajos de grado a partir de los documentos oficiales."
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
@@ -68,3 +68,8 @@ markers = [
 [tool.coverage.run]
 source = ["app"]
 branch = true
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+skip_covered = true

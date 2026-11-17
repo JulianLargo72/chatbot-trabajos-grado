@@ -4,7 +4,22 @@ Asistente conversacional que responde preguntas sobre las normas de presentació
 (formato institucional, formato de anteproyecto y manual IEEE). Usa *Retrieval-Augmented Generation*:
 recupera fragmentos de los documentos oficiales y genera la respuesta con Gemini, citando documento y página.
 
-> Estado: **Sprint 3 – fase F6** (reglas de comportamiento: sin información y fuera de dominio, HU08 y HU09).
+> Estado: **v0.3.0 – Sprints 2 y 3 terminados** (ingesta, recuperación, API de chat y reglas de comportamiento). Siguiente: Sprint 4, interfaz web en Next.js.
+
+## Resultados (v0.3.0)
+
+| Historia | Criterio verificado | Resultado | Evidencia |
+|---|---|---|---|
+| HU03 Lectura y fragmentación | Documentos, páginas y fragmentos con metadatos | 3 documentos, 33 páginas, 36 fragmentos | `python -m app.cli ingest` |
+| HU04 Embeddings e índice | Vectores = fragmentos; recarga sin reprocesar; actualización al añadir un PDF | 36 = 36; ingesta incremental por hash | `ingest`, `indice`, `POST /api/admin/ingest` |
+| HU05 Calidad de recuperación | Hit rate top-3 ≥ 80 % y reporte | **88,9 %** (24/27), MRR 0,824 | `eval/reports/hit_rate_*_cs512.md` |
+| HU06 API de chat | 200 con respuesta y fuentes; documentado en `/docs` | `POST /api/chat` | Swagger, `tests/integration/` |
+| HU07 Fuentes | Documento y página de los fragmentos usados | Fuentes = contexto enviado al LLM | `tests/unit/test_chat_service.py` |
+| HU08 Sin información | Mensaje estándar en las 5 preguntas B | **5 de 5** | `eval/reports/comportamiento_*.md` |
+| HU09 Fuera de dominio | Rechazo en las 5 preguntas C; prompt documentado | **5 de 5** | `docs/system_prompt.md` |
+
+Pruebas: 107 automatizadas (unitarias e integración) con LLM y embeddings simulados; cobertura mínima
+exigida 90 % (`pytest --cov`). Historial de cambios en [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Arquitectura
 
@@ -19,11 +34,12 @@ Un solo proyecto Python (monolito modular). La ingesta y la API comparten config
 | Contratos | `app/schemas/` | Modelos Pydantic de solicitud y respuesta |
 
 ```
-app/            código de la aplicación
+app/            código de la aplicación (api, services, rag, core, schemas)
 data/corpus/    PDF oficiales (no se versionan)
 data/chroma/    índice vectorial persistente (no se versiona)
-eval/           banco de preguntas y reportes de evaluación
-tests/          pruebas unitarias e de integración
+docs/           System Prompt documentado
+eval/           banco de preguntas (JSON) y reportes de evaluación (reports/)
+tests/          pruebas unitarias (unit/) y de integración (integration/)
 ```
 
 ## Requisitos
@@ -167,6 +183,15 @@ Todos los parámetros están en `app/core/config.py` y se leen desde `.env` (pla
 - Una rama por historia: `feature/HU03-chunking`, `feature/HU04-indice`, …
 - Commits convencionales: `feat:`, `fix:`, `test:`, `docs:`, `chore:`, `refactor:`.
 - Antes de cada *merge*: `ruff` sin errores y `pytest` en verde.
+
+## Operación
+
+- Orden recomendado: `python -m app.cli check` → `python -m app.cli ingest` → `python -m app.cli eval` →
+  `uvicorn app.main:app --reload`.
+- Con la API en ejecución, reindexar con `POST /api/admin/ingest` (no con la CLI) para que el servicio de
+  chat recargue el índice automáticamente.
+- Plan gratuito de Gemini: cada consulta usa 1 embedding y 1 llamada al LLM; ante errores 429, usar
+  `--pausa` en `eval` y `eval-chat`. Las pruebas automáticas no consumen cuota.
 
 ## Seguridad
 
