@@ -6,7 +6,7 @@ import threading
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
-from app.api.deps import SettingsDep, verificar_admin
+from app.api.deps import SettingsDep, invalidar_servicio_chat, verificar_admin
 from app.rag.index_store import ModeloEmbeddingsDistintoError
 from app.services.ingestion import ingestar
 
@@ -56,6 +56,7 @@ def ingest(settings: SettingsDep, reset: bool = False) -> IngestaResponse:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
     finally:
         _candado.release()
+    invalidar_servicio_chat()  # el chat recarga el índice actualizado en la próxima consulta
     logger.info("Ingesta solicitada por API", extra={"vectores": resultado.vectores})
     return IngestaResponse(
         **{k: v for k, v in resultado.como_dict().items() if k in IngestaResponse.model_fields}

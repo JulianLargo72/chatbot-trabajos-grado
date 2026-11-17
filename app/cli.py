@@ -4,6 +4,7 @@
 - ``ingest``  lectura, fragmentación, embeddings e indexación incremental en Chroma (HU03, HU04).
 - ``indice``  estadísticas del índice persistente, sin reprocesar los PDF (HU04).
 - ``buscar``  recupera los fragmentos más similares a una pregunta (prueba manual del índice).
+- ``preguntar`` hace una consulta completa (recuperación + Gemini), igual que POST /api/chat.
 - ``eval``    hit rate top-k y análisis del umbral con el banco de preguntas (HU05).
 """
 
@@ -163,6 +164,26 @@ def cmd_buscar(pregunta: str, top_k: int | None) -> int:
     return 0 if fragmentos else 1
 
 
+def cmd_preguntar(pregunta: str) -> int:
+    """Consulta completa desde la terminal: usa 1 embedding y 1 llamada al LLM."""
+    from app.rag.models import build_llm
+    from app.rag.retriever import crear_recuperador
+    from app.services.chat import ChatService, ServicioNoDisponibleError
+
+    settings = get_settings()
+    servicio = ChatService(crear_recuperador(settings), build_llm(settings))
+    try:
+        r = servicio.responder(pregunta)
+    except ServicioNoDisponibleError as exc:
+        logger.error(str(exc))
+        return 1
+    print(f"\nPregunta: {pregunta}\nTipo: {r.tipo} | {r.ms} ms\n\n{r.respuesta}\n")
+    for f in r.fuentes:
+        print(f"  - {f.documento} | pág. {f.pagina} | puntaje {f.puntaje:.3f}")
+    print()
+    return 0
+
+
 def cmd_eval(banco: Path, salida: Path, max_k: int, solo_a: bool, pausa: float) -> int:
     """Calcula el hit rate (HU05), guarda el reporte y sugiere el umbral de similitud."""
     from app.rag.retriever import crear_recuperador
@@ -245,6 +266,9 @@ def main(argv: list[str] | None = None) -> int:
     p_buscar.add_argument("pregunta", help="Pregunta en lenguaje natural (entre comillas)")
     p_buscar.add_argument("--top-k", type=int, default=None, help="Cantidad de fragmentos")
 
+    p_preg = sub.add_parser("preguntar", help="Consulta completa con Gemini (como /api/chat)")
+    p_preg.add_argument("pregunta", help="Pregunta en lenguaje natural (entre comillas)")
+
     p_eval = sub.add_parser("eval", help="Hit rate top-k con el banco de preguntas (HU05)")
     p_eval.add_argument(
         "--banco", type=Path, default=Path("eval/banco_preguntas.json"), help="Banco JSON"
@@ -273,6 +297,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_indice()
         if args.comando == "buscar":
             return cmd_buscar(args.pregunta, args.top_k)
+        if args.comando == "preguntar":
+            return cmd_preguntar(args.pregunta)
         return cmd_eval(args.banco, args.salida, args.max_k, args.solo_a, args.pausa)
     except (RuntimeError, FileNotFoundError) as exc:  # falta la clave, el corpus o el índice
         logger.error(str(exc))

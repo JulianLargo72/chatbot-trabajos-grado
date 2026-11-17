@@ -4,7 +4,7 @@ Asistente conversacional que responde preguntas sobre las normas de presentació
 (formato institucional, formato de anteproyecto y manual IEEE). Usa *Retrieval-Augmented Generation*:
 recupera fragmentos de los documentos oficiales y genera la respuesta con Gemini, citando documento y página.
 
-> Estado: **Sprint 2 – fase F4** (evaluación de la recuperación con el banco de preguntas, HU05).
+> Estado: **Sprint 3 – fase F5** (API de chat con fuentes, HU06 y HU07).
 
 ## Arquitectura
 
@@ -65,6 +65,7 @@ Copy-Item .env.example .env          # luego edita .env y pon tu GOOGLE_API_KEY
 | Estado del índice (sin reprocesar) | `python -m app.cli indice` |
 | Probar la recuperación | `python -m app.cli buscar "¿Cuántas palabras tiene el resumen?"` |
 | Evaluación de la recuperación (hit rate, HU05) | `python -m app.cli eval` |
+| Consulta completa desde la terminal (1 embedding + 1 llamada al LLM) | `python -m app.cli preguntar "¿Cuál es la extensión máxima del resumen?"` |
 
 ## Ingesta (HU03)
 
@@ -109,6 +110,31 @@ documento y páginas esperadas, 5 de categoría B y 5 de categoría C). `python 
 Para experimentar con la fragmentación: cambiar `CHUNK_SIZE`/`CHUNK_OVERLAP` en `.env`, ejecutar
 `python -m app.cli ingest --reset` y luego `python -m app.cli eval`; cada reporte queda con su configuración.
 
+## API de chat (HU06, HU07)
+
+`POST /api/chat`
+
+```json
+// Solicitud
+{ "pregunta": "¿Cuál es la extensión máxima del resumen?" }
+
+// Respuesta 200
+{
+  "respuesta": "Según el formato institucional, el resumen tiene un máximo de 300 palabras…",
+  "fuentes": [{ "documento": "Formato_Proyecto_de_Grado_ETIC_2026_limpio.pdf", "pagina": "1", "puntaje": 0.701 }],
+  "tipo": "respondida"
+}
+```
+
+- `tipo`: `respondida`, `sin_informacion` (HU08) o `fuera_de_dominio` (HU09).
+- `fuentes`: exactamente los fragmentos enviados a Gemini como contexto (una por documento y página);
+  vacía cuando no hay respuesta.
+- Errores: 422 si la pregunta está vacía o supera 1000 caracteres (no consume cuota); 503 si Gemini no
+  responde (timeout, cuota) o si el índice no existe.
+- Flujo: recuperación top-k → filtro por `SIMILARITY_THRESHOLD` → Gemini con el System Prompt versionado
+  (`app/rag/prompts.py`) → etiquetas `[SIN_INFORMACION]`/`[FUERA_DE_DOMINIO]` reemplazadas por mensajes
+  estándar. Sin fragmentos relevantes nunca se devuelve una respuesta generada.
+
 ## Configuración
 
 Todos los parámetros están en `app/core/config.py` y se leen desde `.env` (plantilla en `.env.example`).
@@ -122,7 +148,7 @@ Todos los parámetros están en `app/core/config.py` y se leen desde `.env` (pla
 | `LLM_MAX_OUTPUT_TOKENS` | `1024` | Longitud máxima de la respuesta |
 | `CHUNK_SIZE` / `CHUNK_OVERLAP` | `512` / `64` | Tamaño y solapamiento de fragmentos (tokens) |
 | `TOP_K` | `3` | Fragmentos recuperados por pregunta |
-| `SIMILARITY_THRESHOLD` | `0.60` | Por debajo se responde «sin información» (HU08) |
+| `SIMILARITY_THRESHOLD` | `0.67` | Por debajo se responde «sin información» (HU08) |
 | `LOG_JSON` | `true` | Logs en JSON (evidencia) o texto legible |
 
 ## Flujo de trabajo con Git

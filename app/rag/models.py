@@ -40,6 +40,7 @@ def build_llm(settings: Settings) -> GoogleGenAI:
         temperature=settings.llm_temperature,
         max_tokens=settings.llm_max_output_tokens,
         context_window=settings.llm_context_window,
+        max_retries=settings.llm_max_retries,
         generation_config=build_generation_config(settings),
         http_options=types.HttpOptions(timeout=settings.llm_timeout_seconds * 1000),
     )
